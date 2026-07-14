@@ -47,8 +47,8 @@ services:
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
       - DB_SSL_MODE=${DB_SSL_MODE:-disable}
-      - AMQP_URI=${AMQP_URI:-amqp://guest:guest@rabbitmq:5672/}
-      - STREAM_URI=${STREAM_URI:-rabbitmq-stream://guest:guest@rabbitmq:5552/}
+      - AMQP_URI=amqp://guest:guest@rabbitmq:5672/
+      - STREAM_URI=rabbitmq-stream://guest:guest@rabbitmq:5552/
       - APP_ENV=${APP_ENV:-dev}
     depends_on:
       postgres:
