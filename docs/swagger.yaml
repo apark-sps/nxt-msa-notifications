@@ -1,0 +1,233 @@
+basePath: /v1
+definitions:
+  internal_adapter_inbound_http.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_adapter_inbound_http.HealthResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  internal_adapter_inbound_http.NotificationListResponse:
+    properties:
+      count:
+        type: integer
+      notifications:
+        items:
+          $ref: '#/definitions/nxt-msa-notifications_internal_domain.Notification'
+        type: array
+    type: object
+  internal_adapter_inbound_http.UnreadCountResponse:
+    properties:
+      unread_count:
+        type: integer
+    type: object
+  nxt-msa-notifications_internal_domain.Channel:
+    enum:
+    - websocket
+    - email
+    - sms
+    type: string
+    x-enum-varnames:
+    - ChannelWebSocket
+    - ChannelEmail
+    - ChannelSMS
+  nxt-msa-notifications_internal_domain.DeliveryStatus:
+    enum:
+    - pending
+    - delivered
+    - read
+    - failed
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusDelivered
+    - StatusRead
+    - StatusFailed
+  nxt-msa-notifications_internal_domain.Notification:
+    properties:
+      body:
+        type: string
+      channels:
+        description: Deserialized from TEXT[]
+        items:
+          $ref: '#/definitions/nxt-msa-notifications_internal_domain.Channel'
+        type: array
+      created_at:
+        type: string
+      hierarchy_id:
+        description: Organizational scope
+        type: integer
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: Deserialized from JSONB
+        type: object
+      read_at:
+        type: string
+      status:
+        $ref: '#/definitions/nxt-msa-notifications_internal_domain.DeliveryStatus'
+      title:
+        type: string
+      type:
+        description: e.g. "user.created"
+        type: string
+      user_id:
+        description: Primary route identifier ("USERS0001")
+        type: string
+    type: object
+host: localhost:8085
+info:
+  contact:
+    email: platform@nxt.com
+    name: NXT Platform Team
+  description: |-
+    Real-time and persistent notification service for the NXT platform.
+    Messages are delivered over WebSocket (fan-out via RabbitMQ Stream) and
+    persisted to PostgreSQL (Quorum Queue, exactly-once semantics).
+  license:
+    name: Proprietary
+  title: NXT Notifications API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      description: |-
+        Returns HTTP 200 with {"status":"ok"} when the service is healthy.
+        Used by load balancers, Kubernetes liveness probes, and Docker healthchecks.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.HealthResponse'
+      summary: Service liveness probe
+      tags:
+      - ops
+  /notifications:
+    get:
+      description: |-
+        Returns a paginated list of notifications ordered by created_at DESC.
+        Pass unread=true to filter only unread items.
+      parameters:
+      - description: Return only unread notifications
+        in: query
+        name: unread
+        type: boolean
+      - description: Maximum results to return (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Notification list with count
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.NotificationListResponse'
+        "401":
+          description: Unauthorized — missing or invalid token
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notifications for the authenticated user
+      tags:
+      - notifications
+  /notifications/{id}/read:
+    patch:
+      description: |-
+        Sets the delivery_status of the given notification to "read".
+        The notification must belong to the authenticated user.
+      parameters:
+      - description: Notification UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content — notification marked as read
+        "400":
+          description: Bad request — invalid ID or ownership mismatch
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+        "401":
+          description: Unauthorized — missing or invalid token
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark a single notification as read
+      tags:
+      - notifications
+  /notifications/count:
+    get:
+      description: |-
+        Returns the total number of unread notifications for the authenticated user.
+        Intended for the notification bell badge. Queries the read-replica for low latency.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Unread notification count
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.UnreadCountResponse'
+        "401":
+          description: Unauthorized — missing or invalid token
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get unread notification count
+      tags:
+      - notifications
+  /notifications/read-all:
+    patch:
+      description: |-
+        Sets delivery_status to "read" for every unread notification belonging
+        to the authenticated user in a single batch operation.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content — all notifications marked as read
+        "401":
+          description: Unauthorized — missing or invalid token
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_adapter_inbound_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark all notifications as read
+      tags:
+      - notifications
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT token issued by AWS Cognito. Format: "Bearer <token>"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

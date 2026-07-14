@@ -1,0 +1,335 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Real-time and persistent notification service for the NXT platform.\nMessages are delivered over WebSocket (fan-out via RabbitMQ Stream) and\npersisted to PostgreSQL (Quorum Queue, exactly-once semantics).",
+        "title": "NXT Notifications API",
+        "contact": {
+            "name": "NXT Platform Team",
+            "email": "platform@nxt.com"
+        },
+        "license": {
+            "name": "Proprietary"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8085",
+    "basePath": "/v1",
+    "paths": {
+        "/health": {
+            "get": {
+                "description": "Returns HTTP 200 with {\"status\":\"ok\"} when the service is healthy.\nUsed by load balancers, Kubernetes liveness probes, and Docker healthchecks.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ops"
+                ],
+                "summary": "Service liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/notifications": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of notifications ordered by created_at DESC.\nPass unread=true to filter only unread items.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "summary": "List notifications for the authenticated user",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Return only unread notifications",
+                        "name": "unread",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum results to return (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Notification list with count",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.NotificationListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized — missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/notifications/count": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the total number of unread notifications for the authenticated user.\nIntended for the notification bell badge. Queries the read-replica for low latency.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "summary": "Get unread notification count",
+                "responses": {
+                    "200": {
+                        "description": "Unread notification count",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.UnreadCountResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized — missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/notifications/read-all": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets delivery_status to \"read\" for every unread notification belonging\nto the authenticated user in a single batch operation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "summary": "Mark all notifications as read",
+                "responses": {
+                    "204": {
+                        "description": "No Content — all notifications marked as read"
+                    },
+                    "401": {
+                        "description": "Unauthorized — missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/notifications/{id}/read": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets the delivery_status of the given notification to \"read\".\nThe notification must belong to the authenticated user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "summary": "Mark a single notification as read",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notification UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content — notification marked as read"
+                    },
+                    "400": {
+                        "description": "Bad request — invalid ID or ownership mismatch",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized — missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_inbound_http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "internal_adapter_inbound_http.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_adapter_inbound_http.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_adapter_inbound_http.NotificationListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "notifications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nxt-msa-notifications_internal_domain.Notification"
+                    }
+                }
+            }
+        },
+        "internal_adapter_inbound_http.UnreadCountResponse": {
+            "type": "object",
+            "properties": {
+                "unread_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nxt-msa-notifications_internal_domain.Channel": {
+            "type": "string",
+            "enum": [
+                "websocket",
+                "email",
+                "sms"
+            ],
+            "x-enum-varnames": [
+                "ChannelWebSocket",
+                "ChannelEmail",
+                "ChannelSMS"
+            ]
+        },
+        "nxt-msa-notifications_internal_domain.DeliveryStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "delivered",
+                "read",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "StatusPending",
+                "StatusDelivered",
+                "StatusRead",
+                "StatusFailed"
+            ]
+        },
+        "nxt-msa-notifications_internal_domain.Notification": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "channels": {
+                    "description": "Deserialized from TEXT[]",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nxt-msa-notifications_internal_domain.Channel"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "hierarchy_id": {
+                    "description": "Organizational scope",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Deserialized from JSONB",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "read_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/nxt-msa-notifications_internal_domain.DeliveryStatus"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "e.g. \"user.created\"",
+                    "type": "string"
+                },
+                "user_id": {
+                    "description": "Primary route identifier (\"USERS0001\")",
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT token issued by AWS Cognito. Format: \"Bearer \u003ctoken\u003e\"",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
