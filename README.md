@@ -1,96 +1,100 @@
 # nxt-msa-notifications
 
-> **Real-Time & Scalable Notification Microservice** — Core service of the **NXT Platform** responsible for real-time WebSocket push notifications, automatic offline catch-up, and persistent notification history across multi-channel delivery (WebSocket, Email, SMS).
+> **Microservicio de Notificaciones en Tiempo Real y Escalable** — Servicio principal de la **Plataforma NXT** responsable de notificaciones push en tiempo real vía WebSocket, recuperación automática de mensajes sin conexión, e historial persistente de notificaciones en múltiples canales (WebSocket, Email, SMS).
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-brightgreen.svg)]()
+[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-brightgreen.svg)](https://alistair.cockburn.us/hexagonal-architecture/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B%20Partitioned-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13%2B%20Streams%20%2F%20Quorum-FF6600?logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 [![WebSockets](https://img.shields.io/badge/WebSockets-Real--Time-blue)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 [![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Technology Stack](#technology-stack)
-- [Key Features](#key-features)
-- [Architecture & Design Patterns](#architecture--design-patterns)
-  - [Hexagonal Architecture (Ports & Adapters)](#hexagonal-architecture-ports--adapters)
-  - [Hybrid Messaging Topology: Quorum Queues vs. RabbitMQ Streams](#hybrid-messaging-topology-quorum-queues-vs-rabbitmq-streams)
-  - [Real-Time WebSocket Hub & Automatic Catch-Up](#real-time-websocket-hub--automatic-catch-up)
-  - [Database Partitioning & Read/Write Replication](#database-partitioning--readwrite-replication)
-  - [Multi-Channel Delivery Abstraction](#multi-channel-delivery-abstraction)
-- [Domain Model & Notification Lifecycle](#domain-model--notification-lifecycle)
-- [Project Structure](#project-structure)
-- [Requirements & Prerequisites](#requirements--prerequisites)
-- [Configuration & Environment Variables](#configuration--environment-variables)
-- [Local Development & Running](#local-development--running)
-  - [Running with Docker Compose](#running-with-docker-compose)
-  - [Running Standalone](#running-standalone)
-- [API & WebSocket Reference](#api--websocket-reference)
-  - [REST Endpoints](#rest-endpoints)
-  - [WebSocket Protocol](#websocket-protocol)
-- [Security & Authentication](#security--authentication)
-- [Integration with Java Ecosystem (nxt-msa-commons)](#integration-with-java-ecosystem-nxt-msa-commons)
-- [Testing Strategy](#testing-strategy)
-- [Deployment & Production Considerations](#deployment--production-considerations)
-- [License](#license)
+🌐 **Idioma / Language**: 🇪🇸 Español (predeterminado) · [🇺🇸 English](README.en.md)
 
 ---
 
-## Overview
 
-`nxt-msa-notifications` is a high-concurrency, low-latency microservice built in **Go 1.26+** designed to serve as the notification distribution engine for the NXT platform. It provides reliable push delivery across multiple channels (WebSocket, Email, SMS) with automatic offline catch-up and persistent notification history.
 
-This service solves two critical challenges in modern microservice architectures:
-1. **Guaranteed At-Least-Once Persistence**: Ensuring that every event emitted by core backend services is reliably persisted without overwhelming the primary database.
-2. **Instantaneous Real-Time Delivery & Offline Catch-Up**: Delivering notifications to active browser/mobile sessions via WebSockets in milliseconds, while automatically pushing missed notifications to users the exact moment they reconnect—**eliminating frontend polling entirely**.
+## Tabla de Contenidos
 
----
-
-## Technology Stack
-
-- **Language Runtime:** Go 1.26+ (utilizing `net/http` with Go 1.22+ route patterns, `log/slog` structured logging).
-- **Real-Time WebSockets:** `github.com/gorilla/websocket` (v1.5.3) for connection upgrading, heartbeat frame support, and buffered writing.
-- **AMQP Broker Integration:** `github.com/rabbitmq/amqp091-go` (v1.12.0) for connection pooling and durable consensus operations (Quorum Queues).
-- **Stream Broker Integration:** `github.com/rabbitmq/rabbitmq-stream-go-client` (v1.8.1) for high-performance Stream protocol consumer attachment and offset recovery (`QueryOffset`).
-- **Database Driver & Mapping:**
-  - `github.com/lib/pq` (v1.12.3) as the pure Go PostgreSQL driver.
-  - `github.com/jmoiron/sqlx` (v1.4.0) for lightweight structural binding and dual-pool (primary/replica) management.
-- **Cloud Infrastructure:** `github.com/aws/aws-sdk-go-v2` + `secretsmanager` for secure database credential queries.
-- **API Documentation:** Swagger/OpenAPI via `github.com/swaggo/http-swagger/v2`.
-- **JWT Decode-Only:** Base64 decode of Cognito JWT payload — no signature verification (delegated to API Gateway).
-
----
-
-## Key Features
-
-- ⚡ **Real-Time WebSocket Push**: Bi-directional WebSocket communication hub with automated session management, heartbeat monitoring (ping/pong), and dead-connection pruning.
-- 🔄 **Automatic Offline Catch-Up**: When a client establishes a WebSocket connection, the hub automatically queries PostgreSQL for unread notifications during their offline window and pushes them immediately to populate UI alert badges.
-- 🐇 **Hybrid RabbitMQ Messaging Topology**:
-  - **Quorum Queues**: Highly available, Raft-consensus FIFO queues dedicated to asynchronous database persistence (competing consumers).
-  - **RabbitMQ Streams**: Append-only log structures providing O(1) non-destructive broadcast fan-out across multiple Kubernetes pods.
-- 📬 **Multi-Channel Delivery Abstraction**: Plug-in `Notifier` interface supporting WebSocket delivery today, with empty adapter slots for Email and SMS — new channels added without use-case changes.
-- 🗄️ **Partitioned PostgreSQL & Read/Write Pooling**:
-  - Monthly declarative table partitioning (`notifications.notification_y2026m07`) for infinite horizontal scaling.
-  - Partial B-Tree index on unread items (`status != 'read'`) for sub-millisecond badge count queries.
-  - Split connection pools isolating write traffic (primary DB) from high-volume read queries (read replicas).
-- 🔐 **Zero-Trust JWT Authentication**:
-  - Decode-only JWT parsing matching Java Spring Security (`JwtAuthenticationFilter`) standards.
-  - AWS Cognito claims (`custom:iduser`, `custom:role`, `custom:hierarchyId`) extracted from token payload.
-- ☁️ **Cloud Native & AWS Ready**:
-  - Integrated AWS Secrets Manager client for automated database credential rotation.
-  - Configurable SSL/TLS database modes (`require` for AWS Secrets Manager / RDS, `disable` for local development).
+- [Descripción General](#descripción-general)
+- [Stack Tecnológico](#stack-tecnológico)
+- [Características Principales](#características-principales)
+- [Arquitectura y Patrones de Diseño](#arquitectura-y-patrones-de-diseño)
+  - [Arquitectura Hexagonal (Puertos y Adaptadores)](#arquitectura-hexagonal-puertos-y-adaptadores)
+  - [Topología de Mensajería Híbrida: Quorum Queues vs. RabbitMQ Streams](#topología-de-mensajería-híbrida-quorum-queues-vs-rabbitmq-streams)
+  - [Hub WebSocket en Tiempo Real y Recuperación Automática](#hub-websocket-en-tiempo-real-y-recuperación-automática)
+  - [Particionamiento de Base de Datos y Replicación Lectura/Escritura](#particionamiento-de-base-de-datos-y-replicación-lecturaescritura)
+  - [Abstracción de Entrega Multicanal](#abstracción-de-entrega-multicanal)
+- [Modelo de Dominio y Ciclo de Vida de Notificaciones](#modelo-de-dominio-y-ciclo-de-vida-de-notificaciones)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Requisitos y Prerrequisitos](#requisitos-y-prerrequisitos)
+- [Configuración y Variables de Entorno](#configuración-y-variables-de-entorno)
+- [Desarrollo Local y Ejecución](#desarrollo-local-y-ejecución)
+  - [Ejecución con Docker Compose](#ejecución-con-docker-compose)
+  - [Ejecución Independiente](#ejecución-independiente)
+- [Referencia de API y WebSocket](#referencia-de-api-y-websocket)
+  - [Endpoints REST](#endpoints-rest)
+  - [Protocolo WebSocket](#protocolo-websocket)
+- [Seguridad y Autenticación](#seguridad-y-autenticación)
+- [Integración con el Ecosistema Java (nxt-msa-commons)](#integración-con-el-ecosistema-java-nxt-msa-commons)
+- [Estrategia de Pruebas](#estrategia-de-pruebas)
+- [Despliegue y Consideraciones de Producción](#despliegue-y-consideraciones-de-producción)
+- [Licencia](#licencia)
 
 ---
 
-## Architecture & Design Patterns
+## Descripción General
 
-### Hexagonal Architecture (Ports & Adapters)
+`nxt-msa-notifications` es un microservicio de alta concurrencia y baja latencia construido en **Go 1.26+**, diseñado para ser el motor de distribución de notificaciones de la plataforma NXT. Proporciona entrega confiable a múltiples canales (WebSocket, Email, SMS) con recuperación automática de mensajes sin conexión e historial persistente de notificaciones.
 
-The codebase strictly adheres to **Hexagonal Architecture (Ports & Adapters)**, ensuring total isolation between business logic and infrastructure concerns.
+Este servicio resuelve dos desafíos críticos en arquitecturas de microservicios modernas:
+1. **Persistencia Garantizada (At-Least-Once)**: Asegurar que cada evento emitido por los servicios backend se persista de forma confiable sin sobrecargar la base de datos primaria.
+2. **Entrega en Tiempo Real e Recuperación Offline Instantánea**: Entregar notificaciones a sesiones activas de browser/mobile vía WebSockets en milisegundos, mientras automáticamente envía las notificaciones perdidas en el momento exacto en que el usuario se reconecta — **eliminando completamente el polling desde el frontend**.
+
+---
+
+## Stack Tecnológico
+
+- **Runtime del Lenguaje:** Go 1.26+ (utilizando `net/http` con patrones de rutas de Go 1.22+, logging estructurado con `log/slog`).
+- **WebSockets en Tiempo Real:** `github.com/gorilla/websocket` (v1.5.3) para actualización de conexiones, soporte de frames de heartbeat y escritura con buffer.
+- **Integración AMQP con el Broker:** `github.com/rabbitmq/amqp091-go` (v1.12.0) para pooling de conexiones y operaciones de consenso durables (Quorum Queues).
+- **Integración Stream con el Broker:** `github.com/rabbitmq/rabbitmq-stream-go-client` (v1.8.1) para conexión de alto rendimiento mediante protocolo Stream y recuperación de offsets (`QueryOffset`).
+- **Driver y Mapeo de Base de Datos:**
+  - `github.com/lib/pq` (v1.12.3) como driver puro de Go para PostgreSQL.
+  - `github.com/jmoiron/sqlx` (v1.4.0) para binding estructural ligero y gestión de pool dual (primario/réplica).
+- **Infraestructura Cloud:** `github.com/aws/aws-sdk-go-v2` + `secretsmanager` para consulta segura de credenciales de base de datos.
+- **Documentación de API:** Swagger/OpenAPI vía `github.com/swaggo/http-swagger/v2`.
+- **JWT Solo-Decodificación:** Decodificación Base64 del payload JWT de Cognito — sin verificación de firma (delegada al API Gateway).
+
+---
+
+## Características Principales
+
+- ⚡ **Push WebSocket en Tiempo Real**: Hub de comunicación WebSocket bidireccional con gestión automatizada de sesiones, monitoreo de heartbeat (ping/pong) y eliminación de conexiones muertas.
+- 🔄 **Recuperación Automática Offline**: Cuando un cliente establece una conexión WebSocket, el hub consulta automáticamente PostgreSQL por notificaciones no leídas durante su ventana offline y las envía de inmediato para poblar los badges de la UI.
+- 🐇 **Topología de Mensajería Híbrida con RabbitMQ**:
+  - **Quorum Queues**: Colas FIFO de alta disponibilidad con consenso Raft, dedicadas a la persistencia asíncrona en base de datos (consumidores competitivos).
+  - **RabbitMQ Streams**: Estructuras de log append-only que proveen fan-out de broadcast no destructivo O(1) entre múltiples pods de Kubernetes.
+- 📬 **Abstracción de Entrega Multicanal**: Interfaz `Notifier` tipo plug-in que soporta entrega WebSocket hoy, con slots de adaptadores vacíos para Email y SMS — nuevos canales se agregan sin cambiar los casos de uso.
+- 🗄️ **PostgreSQL Particionado y Pool Lectura/Escritura**:
+  - Particionamiento mensual declarativo de tabla (`notifications.notification_y2026m07`) para escalado horizontal infinito.
+  - Índice B-Tree parcial en ítems no leídos (`status != 'read'`) para consultas de badge en sub-milisegundos.
+  - Pools de conexión separados que aíslan el tráfico de escritura (DB primaria) de las consultas de lectura de alto volumen (réplicas).
+- 🔐 **Autenticación JWT Zero-Trust**:
+  - Parsing JWT solo-decodificación compatible con los estándares de Java Spring Security (`JwtAuthenticationFilter`).
+  - Claims de AWS Cognito (`custom:iduser`, `custom:role`, `custom:hierarchyId`) extraídos del payload del token.
+- ☁️ **Cloud Native y Listo para AWS**:
+  - Cliente AWS Secrets Manager integrado para rotación automatizada de credenciales de base de datos.
+  - Modos SSL/TLS de base de datos configurables (`require` para AWS Secrets Manager / RDS, `disable` para desarrollo local).
+
+---
+
+## Arquitectura y Patrones de Diseño
+
+### Arquitectura Hexagonal (Puertos y Adaptadores)
+
+El código sigue estrictamente la **Arquitectura Hexagonal (Puertos y Adaptadores)**, garantizando total aislamiento entre la lógica de negocio y las preocupaciones de infraestructura.
 
 ```mermaid
 graph TD
@@ -137,9 +141,9 @@ graph TD
     PG_ADAPTER -.->|"Credential Rotation"| AWS_ADAPTER
 ```
 
-### Hybrid Messaging Topology: Quorum Queues vs. RabbitMQ Streams
+### Topología de Mensajería Híbrida: Quorum Queues vs. RabbitMQ Streams
 
-A defining architectural feature is its **hybrid messaging topology**. Rather than relying on a single queue type, the system leverages Quorum Queues for database persistence and RabbitMQ Streams for real-time broadcast.
+Una característica arquitectónica definitoria es su **topología de mensajería híbrida**. En lugar de depender de un único tipo de cola, el sistema aprovecha las Quorum Queues para persistencia en base de datos y los RabbitMQ Streams para broadcast en tiempo real.
 
 ```mermaid
 graph LR
@@ -174,24 +178,53 @@ graph LR
     SC -->|"Push to Local Active Sessions"| HUB
 ```
 
-#### Why Quorum Queues for Database Persistence?
-- **Transactional Safety & Consensus**: Quorum Queues use the Raft consensus algorithm across RabbitMQ cluster nodes.
-- **Competing Consumers (Work Queue Model)**: Each message is delivered to **exactly one worker instance**, ensuring SQL `INSERT` operations are executed without duplication.
-- **Idempotency via `ON CONFLICT DO NOTHING`**: If a pod crashes after write but before ACK, the redelivered message is silently skipped.
-- **Poison Message Handling**: Malformed messages are dead-lettered; transient DB failures trigger requeue with automatic redelivery.
+#### ¿Por qué Quorum Queues para Persistencia en Base de Datos?
+- **Seguridad Transaccional y Consenso**: Las Quorum Queues utilizan el algoritmo de consenso Raft entre los nodos del clúster RabbitMQ.
+- **Consumidores Competitivos (Modelo Work Queue)**: Cada mensaje se entrega a **exactamente una instancia de worker**, asegurando que las operaciones SQL `INSERT` se ejecuten sin duplicación.
+- **Idempotencia via `ON CONFLICT DO NOTHING`**: Si un pod falla después de escribir pero antes del ACK, el mensaje reenviado se descarta silenciosamente.
+- **Manejo de Mensajes Envenenados**: Los mensajes malformados se envían a dead-letter; las fallas transitorias de DB generan reencola con reentrega automática.
 
-#### Why RabbitMQ Streams for WebSocket Fan-Out?
-- **Non-Destructive Read & Fan-Out**: Multiple consumers read the same messages independently without removing them.
-- **O(1) Broadcast Across Pods**: Every running pod receives every message and checks if the target user is connected locally.
-- **Independent Pod Offsets (`QueryOffset`)**: Each pod registers with a unique consumer name (`podName:streamName`). On restart, `QueryOffset` returns the last committed offset, enabling seamless resume without message loss or re-broadcast.
+#### ¿Por qué RabbitMQ Streams para Fan-Out WebSocket?
+
+> **Nota para el equipo**: Los Streams de RabbitMQ funcionan de manera fundamentalmente diferente a las colas clásicas o quórum. Si vienes de un background de AMQP 0-9-1, este modelo puede sorprenderte.
+
+##### Los Streams son Logs Inmutables (Append-Only)
+
+Las colas tradicionales son **destructivas**: los mensajes desaparecen una vez que se confirman con ACK. Los Streams, en cambio, son registros persistentes e inmutables donde solo se añade información al final — exactamente como Kafka.
+
+**Los mensajes nunca se eliminan por ACK**. Solo abandonan el Stream según las políticas de retención configuradas (tiempo máximo de vida `x-max-age` o tamaño máximo del log). Esto significa que **múltiples consumidores pueden leer los mismos mensajes de forma independiente** — un requisito fundamental para el broadcast a todos los pods.
+
+##### El Progreso del Consumidor: Offsets en lugar de ACKs
+
+En lugar de ACKs por mensaje, los Streams utilizan **offsets** — enteros de 64 bits que representan la posición exacta de un mensaje en el log.
+
+Cada pod del servicio se registra con un nombre de consumidor único (`{POD_NAME}:{STREAM_NAME}`) y el broker almacena su progreso de forma independiente. Esto habilita:
+
+- **Fan-out O(1)**: Un único Stream, N lectores independientes — sin overhead de copia en el broker.
+- **Recuperación de Offsets (`QueryOffset`)**: Al reiniciar, cada pod consulta su último offset confirmado y reanuda desde `offset + 1` — sin pérdida de mensajes ni re-broadcast innecesario.
+- **Replay Completo**: A diferencia de las colas clásicas donde el ACK es irreversible, en Streams es posible volver a leer desde cualquier posición reiniciando el offset — invaluable para debugging y recuperación de desastres.
+
+##### Comparativa de Modelos
+
+| Característica | Colas Clásicas / Quórum | RabbitMQ Streams |
+| :--- | :--- | :--- |
+| **Progreso del Consumidor** | ACKs por mensaje (`basic.ack`) | Offsets (punteros de posición) |
+| **Vida del Mensaje** | Se elimina tras el ACK | Definida por política de retención (edad/tamaño) |
+| **Consumidores Competidores** | Distribuye mensajes *entre* consumidores | Cada consumidor puede leer *todos* los mensajes |
+| **Replay** | Imposible una vez hecho el ACK | Totalmente soportado (reinicia el offset) |
+| **Protocolo** | AMQP 0-9-1 | Stream Protocol nativo (puerto 5552) |
+
+##### Implementación: Auto-Commit de Offsets
+
+En lugar de confirmar cada mensaje individualmente (lo cual generaría overhead de red significativo), el consumidor utiliza **auto-commit con umbral dual**: confirma el offset al broker cada 500 mensajes procesados *o* cada 5 segundos — lo que ocurra primero. Esto garantiza una ventana de replay máxima predecible en caso de fallo del pod.
 
 ---
 
-### Real-Time WebSocket Hub & Automatic Catch-Up
+### Hub WebSocket en Tiempo Real y Recuperación Automática
 
-The WebSocket Hub (`internal/adapter/outbound/websocket/hub.go`) acts as an in-memory session registry and event dispatcher. It maintains thread-safe mappings of active client connections keyed by `user_id`, supporting multiple simultaneous connections per user (multi-device/multi-tab).
+El Hub WebSocket (`internal/adapter/outbound/websocket/hub.go`) actúa como un registro de sesiones en memoria y despachador de eventos. Mantiene mappings thread-safe de conexiones de clientes activas indexadas por `user_id`, soportando múltiples conexiones simultáneas por usuario (multi-dispositivo/multi-tab).
 
-#### Automatic Catch-Up Workflow
+#### Flujo de Recuperación Automática
 
 ```mermaid
 sequenceDiagram
@@ -214,23 +247,23 @@ sequenceDiagram
 
 ---
 
-### Database Partitioning & Read/Write Replication
+### Particionamiento de Base de Datos y Replicación Lectura/Escritura
 
-1. **Declarative Monthly Partitioning**: The master table `notifications.notification` is partitioned by range on `created_at`. Child tables (`notification_y2026m07`, `notification_y2026m08`, etc.) are created via migration. This ensures index trees remain small and allows instant archival without `VACUUM` locking.
-2. **Partial Unread Indexes**:
+1. **Particionamiento Mensual Declarativo**: La tabla maestra `notifications.notification` está particionada por rango en `created_at`. Las tablas hijas (`notification_y2026m07`, `notification_y2026m08`, etc.) se crean mediante migración. Esto mantiene los árboles de índice pequeños y permite archivado instantáneo sin bloqueos `VACUUM`.
+2. **Índices Parciales de No Leídos**:
    ```sql
    CREATE INDEX IF NOT EXISTS idx_notif_user_unread
        ON notifications.notification (user_id, created_at DESC)
        WHERE status != 'read';
    ```
-   This reduces index size by over 95%, allowing unread badge counts to execute in sub-millisecond time.
-3. **Dual Pool Architecture**: The repository configures two distinct `sqlx.DB` instances:
-   - **Primary Pool**: Dedicated exclusively to Quorum consumer `INSERT` operations and UPDATE statements.
-   - **Read Replica Pool**: Dedicated to pagination queries and WebSocket catch-up reads, preventing read spikes from impacting ingestion throughput.
+   Esto reduce el tamaño del índice en más del 95%, permitiendo que el conteo de badges de no leídos se ejecute en sub-milisegundos.
+3. **Arquitectura Dual Pool**: El repositorio configura dos instancias `sqlx.DB` distintas:
+   - **Pool Primario**: Dedicado exclusivamente a operaciones `INSERT` del consumidor Quorum y sentencias UPDATE.
+   - **Pool de Réplica de Lectura**: Dedicado a consultas de paginación y lecturas de catch-up WebSocket, evitando que los picos de lectura impacten el throughput de ingesta.
 
-### Multi-Channel Delivery Abstraction
+### Abstracción de Entrega Multicanal
 
-The `outbound.Notifier` interface defines a single `Send()` method, allowing delivery to any channel without use-case changes:
+La interfaz `outbound.Notifier` define un único método `Send()`, permitiendo entrega a cualquier canal sin cambios en los casos de uso:
 
 ```go
 type Notifier interface {
@@ -239,18 +272,18 @@ type Notifier interface {
 }
 ```
 
-Currently implemented adapters:
-- **WebSocket Hub** — real-time push to connected browser/mobile sessions.
-- **Email** — placeholder (directory ready for implementation).
-- **SMS** — placeholder (directory ready for implementation).
+Adaptadores actualmente implementados:
+- **WebSocket Hub** — push en tiempo real a sesiones browser/mobile conectadas.
+- **Email** — placeholder (directorio listo para implementación).
+- **SMS** — placeholder (directorio listo para implementación).
 
-The `DispatchUseCase.HandleRealTimeDispatch()` iterates over the event's requested channels and dispatches to each registered notifier in a separate goroutine, silently discarding unregistered channels.
+`DispatchUseCase.HandleRealTimeDispatch()` itera sobre los canales solicitados por el evento y los despacha a cada notifier registrado en una goroutine separada, descartando silenciosamente los canales no registrados.
 
 ---
 
-## Domain Model & Notification Lifecycle
+## Modelo de Dominio y Ciclo de Vida de Notificaciones
 
-### Core Entity: `Notification`
+### Entidad Principal: `Notification`
 
 ```go
 type Notification struct {
@@ -268,7 +301,7 @@ type Notification struct {
 }
 ```
 
-### Incoming Event Contract: `NotificationEvent`
+### Contrato de Evento Entrante: `NotificationEvent`
 
 ```go
 type NotificationEvent struct {
@@ -285,7 +318,7 @@ type NotificationEvent struct {
 }
 ```
 
-### Notification Status Lifecycle
+### Ciclo de Vida del Estado de Notificación
 
 ```mermaid
 stateDiagram-v2
@@ -299,13 +332,13 @@ stateDiagram-v2
     Read --> [*]
 ```
 
-### Deterministic ID Generation
+### Generación Determinística de IDs
 
-Notification IDs are generated as UUID v5 from `(EventID + ":" + UserID)`, ensuring the same event produces identical IDs across the DB persistence path and the real-time dispatch path. This is verified by `TestHandleRealTimeDispatch_IDMatchesDBWriteID`.
+Los IDs de notificaciones se generan como UUID v5 a partir de `(EventID + ":" + UserID)`, asegurando que el mismo evento produzca IDs idénticos tanto en el camino de persistencia en DB como en el de despacho en tiempo real. Esto se verifica con `TestHandleRealTimeDispatch_IDMatchesDBWriteID`.
 
 ---
 
-## Project Structure
+## Estructura del Proyecto
 
 ```
 nxt-msa-notifications/
@@ -369,89 +402,89 @@ nxt-msa-notifications/
 
 ---
 
-## Requirements & Prerequisites
+## Requisitos y Prerrequisitos
 
-| Component | Version / Requirement | Notes |
+| Componente | Versión / Requerimiento | Notas |
 | :--- | :--- | :--- |
-| **Go (SDK)** | `1.26+` | Required for `http.ServeMux` pattern matching and `log/slog` |
-| **PostgreSQL** | `16.0+` | Requires range partitioning and partial B-Tree index support |
-| **RabbitMQ** | `3.13+` | **Critical**: Must support Stream Protocol (Port 5552) and Quorum Queues |
-| **Docker & Compose** | `24.0+` | Recommended for spinning up local dependency stack |
-| **AWS CLI / Credentials** | Required for Cloud / Prod | Needed only when `DB_SECRET_NAME` is configured |
+| **Go (SDK)** | `1.26+` | Requerido para pattern matching de `http.ServeMux` y `log/slog` |
+| **PostgreSQL** | `16.0+` | Requiere particionamiento por rango e índices B-Tree parciales |
+| **RabbitMQ** | `3.13+` | **Crítico**: Debe soportar Stream Protocol (Puerto 5552) y Quorum Queues |
+| **Docker & Compose** | `24.0+` | Recomendado para levantar el stack de dependencias local |
+| **AWS CLI / Credenciales** | Requerido para Cloud / Prod | Necesario solo cuando `DB_SECRET_NAME` está configurado |
 
 ---
 
-## Configuration & Environment Variables
+## Configuración y Variables de Entorno
 
-The application is configured entirely via environment variables, following the **12-Factor App** methodology. Exchange, queue, and stream names are automatically derived from `APP_ENV` (e.g., `sps-dev-notifications-exchange-events`, `sps-qa-notifications-queue-persist`).
+La aplicación se configura íntegramente mediante variables de entorno, siguiendo la metodología **12-Factor App**. Los nombres de exchange, colas y streams se derivan automáticamente de `APP_ENV` (ej. `sps-dev-notifications-exchange-events`, `sps-qa-notifications-queue-persist`).
 
-| Variable Name | Default Value | Description |
+| Variable | Valor por Defecto | Descripción |
 | :--- | :--- | :--- |
-| `APP_ENV` | `dev` | Environment profile (`dev`, `qa`, `sbx`) — drives resource naming |
-| `SERVER_PORT` | `8085` | HTTP / WebSocket server listening port |
-| `DB_HOST` | `localhost` | Primary (write) database host |
-| `DB_HOST_RO` | `localhost` | Read-replica database host |
-| `DB_PORT` | `5432` | Database port |
-| `DB_NAME` | `notifications` | Database name |
-| `DB_USER` | *(empty)* | Database user |
-| `DB_PASSWORD` | *(empty)* | Database password |
-| `DB_SSL_MODE` | `disable` | SSL mode (`disable` for local Docker, `require` for AWS/RDS) |
-| `DB_SECRET_NAME` | *(empty)* | AWS Secrets Manager secret name — overrides DB_HOST/DB_USER/DB_PASSWORD when set |
-| `AMQP_URI` | `amqp://guest:guest@localhost:5672/` | AMQP connection string |
-| `AMQP_EXCHANGE` | `sps-{env}-notifications-exchange-events` | Topic exchange name |
-| `AMQP_PERSIST_QUEUE` | `sps-{env}-notifications-queue-persist` | Quorum queue name |
-| `AMQP_ROUTING_KEY` | `#` | Routing key binding for both consumers |
-| `STREAM_URI` | `rabbitmq-stream://guest:guest@localhost:5552/` | Stream protocol connection string |
-| `STREAM_NAME` | `sps-{env}-notifications-queue-broadcast` | RabbitMQ Stream name |
-| `STREAM_MAX_AGE_SECS` | `86400` | Stream retention window (24 hours) |
-| `POD_NAME` | *(hostname)* | Unique consumer name for stream offset tracking |
+| `APP_ENV` | `dev` | Perfil de entorno (`dev`, `qa`, `sbx`) — determina el nombrado de recursos |
+| `SERVER_PORT` | `8085` | Puerto de escucha del servidor HTTP / WebSocket |
+| `DB_HOST` | `localhost` | Host de base de datos primaria (escritura) |
+| `DB_HOST_RO` | `localhost` | Host de réplica de lectura |
+| `DB_PORT` | `5432` | Puerto de base de datos |
+| `DB_NAME` | `notifications` | Nombre de base de datos |
+| `DB_USER` | *(vacío)* | Usuario de base de datos |
+| `DB_PASSWORD` | *(vacío)* | Contraseña de base de datos |
+| `DB_SSL_MODE` | `disable` | Modo SSL (`disable` para Docker local, `require` para AWS/RDS) |
+| `DB_SECRET_NAME` | *(vacío)* | Nombre del secreto en AWS Secrets Manager — sobreescribe DB_HOST/DB_USER/DB_PASSWORD cuando está configurado |
+| `AMQP_URI` | `amqp://guest:guest@localhost:5672/` | String de conexión AMQP |
+| `AMQP_EXCHANGE` | `sps-{env}-notifications-exchange-events` | Nombre del topic exchange |
+| `AMQP_PERSIST_QUEUE` | `sps-{env}-notifications-queue-persist` | Nombre de la Quorum Queue |
+| `AMQP_ROUTING_KEY` | `#` | Binding de routing key para ambos consumidores |
+| `STREAM_URI` | `rabbitmq-stream://guest:guest@localhost:5552/` | String de conexión del protocolo Stream |
+| `STREAM_NAME` | `sps-{env}-notifications-queue-broadcast` | Nombre del RabbitMQ Stream |
+| `STREAM_MAX_AGE_SECS` | `86400` | Ventana de retención del Stream (24 horas) |
+| `POD_NAME` | *(hostname)* | Nombre único del consumidor para tracking de offsets del Stream |
 
 ---
 
-## Local Development & Running
+## Desarrollo Local y Ejecución
 
-### Running with Docker Compose
+### Ejecución con Docker Compose
 
 ```bash
-# 1. Start infrastructure dependencies in the background
+# 1. Iniciar las dependencias de infraestructura en segundo plano
 docker compose up -d
 
-# 2. Verify containers are healthy
+# 2. Verificar que los contenedores están saludables
 docker compose ps
 
-# 3. Run the Go application locally
+# 3. Ejecutar la aplicación Go localmente
 go run cmd/server/main.go
 ```
 
-> **Note**: Access the RabbitMQ Management UI at `http://localhost:15672` (Credentials: `guest` / `guest`). Swagger UI is available at `http://localhost:8085/api/`.
+> **Nota**: Accede a la UI de gestión de RabbitMQ en `http://localhost:15672` (Credenciales: `guest` / `guest`). La Swagger UI está disponible en `http://localhost:8085/api/`.
 
-### Running Standalone
+### Ejecución Independiente
 
 ```bash
-# 1. Download dependencies and verify modules
+# 1. Descargar dependencias y verificar módulos
 go mod download
 go mod verify
 
-# 2. Run unit and architecture tests
+# 2. Ejecutar pruebas unitarias y de arquitectura
 go test -v -race ./...
 
-# 3. Build optimized binary
+# 3. Compilar binario optimizado
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/nxt-notifications cmd/server/main.go
 
-# 4. Execute binary
+# 4. Ejecutar binario
 ./bin/nxt-notifications
 ```
 
 ---
 
-## API & WebSocket Reference
+## Referencia de API y WebSocket
 
-### REST Endpoints
+### Endpoints REST
 
-All HTTP REST endpoints require a valid JWT in the `Authorization` header:
+Todos los endpoints HTTP REST requieren un JWT válido en el header `Authorization`:
 - `Authorization: Bearer <jwt_token>`
 
-#### 1. Health Check
+#### 1. Health Check (Verificación de Salud)
 ```http
 GET /health
 ```
@@ -462,7 +495,7 @@ GET /health
 }
 ```
 
-#### 2. Get Paginated Notifications
+#### 2. Obtener Notificaciones Paginadas
 ```http
 GET /v1/notifications?limit=20&offset=0&unread=true
 ```
@@ -485,7 +518,7 @@ GET /v1/notifications?limit=20&offset=0&unread=true
 }
 ```
 
-#### 3. Get Unread Notification Count
+#### 3. Obtener Conteo de Notificaciones No Leídas
 ```http
 GET /v1/notifications/count
 ```
@@ -496,27 +529,27 @@ GET /v1/notifications/count
 }
 ```
 
-#### 4. Mark Notification as Read
+#### 4. Marcar Notificación como Leída
 ```http
 PATCH /v1/notifications/{id}/read
 ```
 **Response (204 No Content)**
 
-#### 5. Mark All Notifications as Read
+#### 5. Marcar Todas las Notificaciones como Leídas
 ```http
 PATCH /v1/notifications/read-all
 ```
 **Response (204 No Content)**
 
-#### Swagger UI
+#### Swagger UI (Documentación Interactiva)
 ```http
 GET /api/
 ```
 Serves the Swagger UI documentation for all endpoints.
 
-### WebSocket Protocol
+### Protocolo WebSocket
 
-To establish a real-time WebSocket connection, connect to the following endpoint with the JWT passed as a query parameter (since browser WebSocket APIs cannot set custom headers during the handshake):
+Para establecer una conexión WebSocket en tiempo real, conectarse al siguiente endpoint con el JWT como query parameter (ya que las APIs de WebSocket del browser no pueden enviar headers personalizados durante el handshake):
 
 ```http
 GET /v1/notifications/ws?token=<jwt> HTTP/1.1
@@ -525,9 +558,9 @@ Upgrade: websocket
 Connection: Upgrade
 ```
 
-#### Server Push Message Format
+#### Formato de Mensajes Push del Servidor
 
-**New Notification (live)**:
+**Nueva Notificación (en vivo)**:
 ```json
 {
   "type": "notification",
@@ -543,7 +576,7 @@ Connection: Upgrade
 }
 ```
 
-**Catch-Up (on connect)**:
+**Catch-Up (al conectar)**:
 ```json
 {
   "type": "catch_up",
@@ -555,29 +588,29 @@ Connection: Upgrade
 ```
 
 #### Heartbeat (Ping/Pong)
-- **Server Ping**: The server emits a WebSocket `PING` frame every **54 seconds**.
-- **Client Pong**: The client must respond with a `PONG` frame within **60 seconds**, otherwise the hub closes the connection and releases session resources.
+- **Ping del Servidor**: El servidor emite un frame WebSocket `PING` cada **54 segundos**.
+- **Pong del Cliente**: El cliente debe responder con un frame `PONG` dentro de los **60 segundos**, de lo contrario el hub cierra la conexión y libera los recursos de sesión.
 
 ---
 
-## Security & Authentication
+## Seguridad y Autenticación
 
-### Stateless JWT (Decode-Only)
+### JWT Sin Estado (Solo Decodificación)
 
-`nxt-msa-notifications` performs **decode-only** JWT parsing — no signature verification, no public key, no HMAC secret. Token validation is delegated to the edge API Gateway (AWS Cognito / API Gateway / Kong).
+`nxt-msa-notifications` realiza parsing JWT de **solo decodificación** — sin verificación de firma, sin clave pública, sin secreto HMAC. La validación del token está delegada al API Gateway de borde (AWS Cognito / API Gateway / Kong).
 
-1. **Token Extraction**: For REST endpoints, the `Authorization: Bearer <token>` header is used. For WebSocket connections, the token is passed as `?token=<jwt>`.
-2. **Claim Extraction**: The middleware extracts `custom:iduser` (user ID), `custom:role` (role), `custom:hierarchyId` (organizational scope), and `jti` (session ID).
-3. **Validation**: Tokens with missing `jti` or `custom:iduser` claims are rejected, mirroring the Java `JwtAuthenticationFilter.isInvalidRequest()` logic.
-4. **User Scoping**: All database queries are scoped by `user_id`, ensuring cross-tenant isolation.
+1. **Extracción del Token**: Para endpoints REST se usa el header `Authorization: Bearer <token>`. Para conexiones WebSocket el token se pasa como `?token=<jwt>`.
+2. **Extracción de Claims**: El middleware extrae `custom:iduser` (ID de usuario), `custom:role` (rol), `custom:hierarchyId` (scope organizacional) y `jti` (ID de sesión).
+3. **Validación**: Los tokens con claims `jti` o `custom:iduser` faltantes son rechazados, reflejando la lógica Java de `JwtAuthenticationFilter.isInvalidRequest()`.
+4. **Scope por Usuario**: Todas las consultas de base de datos están limitadas por `user_id`, asegurando aislamiento entre tenants.
 
 ---
 
-## Integration with Java Ecosystem (`nxt-msa-commons`)
+## Integración con el Ecosistema Java (`nxt-msa-commons`)
 
-Backend microservices in the NXT ecosystem publish notifications using the `NotificationPublisher` component provided by `nxt-msa-commons` (Java 21 / Spring Boot 4).
+Los microservicios backend del ecosistema NXT publican notificaciones usando el componente `NotificationPublisher` provisto por `nxt-msa-commons` (Java 21 / Spring Boot 4).
 
-### Java Producer Example
+### Ejemplo de Productor Java
 
 ```java
 package com.nxt.platform.service;
@@ -612,17 +645,17 @@ public class UserManagementService {
 }
 ```
 
-When `notificationPublisher.publish()` is called:
-1. The Spring Boot starter publishes JSON to the exchange `sps-{env}-notifications-exchange-events` with routing key `#`.
-2. RabbitMQ routes a copy to `sps-{env}-notifications-queue-persist` (Quorum → DB) and `sps-{env}-notifications-queue-broadcast` (Stream → Go WebSockets).
+Cuando se llama a `notificationPublisher.publish()`:
+1. El starter de Spring Boot publica JSON al exchange `sps-{env}-notifications-exchange-events` con routing key `#`.
+2. RabbitMQ enruta una copia a `sps-{env}-notifications-queue-persist` (Quorum → DB) y `sps-{env}-notifications-queue-broadcast` (Stream → Go WebSockets).
 
 ---
 
-## Testing Strategy
+## Estrategia de Pruebas
 
-The project uses a clean, layered unit test suite built exclusively with the **Go standard library** — no third-party mock generators or test frameworks. Tests are fast, deterministic, and isolated per architectural layer.
+El proyecto utiliza una suite de pruebas unitarias limpia y en capas, construida exclusivamente con la **librería estándar de Go** — sin generadores de mocks de terceros ni frameworks de prueba. Las pruebas son rápidas, determinísticas y aisladas por capa arquitectónica.
 
-### Running the Test Suite
+### Ejecutar la Suite de Pruebas
 
 ```bash
 # Run all unit tests with race detection
@@ -635,29 +668,29 @@ go test -v -race ./internal/adapter/middleware/...
 go test -v -race ./internal/adapter/inbound/http/...
 ```
 
-### Test Files
+### Archivos de Prueba
 
-| File | Package | Coverage |
-|------|---------|----------|
-| [`internal/domain/notification_test.go`](internal/domain/notification_test.go) | `domain` | Deterministic UUID v5 generation, delivery status constants |
-| [`internal/adapter/middleware/jwt_test.go`](internal/adapter/middleware/jwt_test.go) | `middleware` | JWT decode-only parsing, claim extraction, `Bearer` prefix stripping, `DisplayName` assembly |
-| [`internal/usecase/dispatch_test.go`](internal/usecase/dispatch_test.go) | `usecase` | DB persistence, real-time dispatch, deterministic ID alignment, channel routing and discard logic |
-| [`internal/adapter/inbound/http/handler_test.go`](internal/adapter/inbound/http/handler_test.go) | `http` | All REST routes — `401` auth failures, successful responses, unread count accuracy, `204 No Content` mark-read, pagination defaults, health check |
+| Archivo | Paquete | Cobertura |
+|---------|---------|----------|
+| [`internal/domain/notification_test.go`](internal/domain/notification_test.go) | `domain` | Generación determinística de UUID v5, constantes de estado de entrega |
+| [`internal/adapter/middleware/jwt_test.go`](internal/adapter/middleware/jwt_test.go) | `middleware` | Parsing JWT solo-decodificación, extracción de claims, stripping del prefijo `Bearer`, ensamblado de `DisplayName` |
+| [`internal/usecase/dispatch_test.go`](internal/usecase/dispatch_test.go) | `usecase` | Persistencia en DB, despacho en tiempo real, alineación de IDs determinísticos, routing de canales y lógica de descarte |
+| [`internal/adapter/inbound/http/handler_test.go`](internal/adapter/inbound/http/handler_test.go) | `http` | Todas las rutas REST — fallos `401` de autenticación, respuestas exitosas, precisión del conteo de no leídos, mark-read `204 No Content`, defaults de paginación, health check |
 
-### Design Philosophy
+### Filosofía de Diseño
 
-- **No external mock libraries** — thin, hand-crafted in-memory mocks implement the `outbound.NotificationRepository` and `outbound.Notifier` interfaces directly inside test files.
-- **Layer isolation** — each test file targets a single architectural layer; no test crosses hexagonal boundaries.
-- **Race-safe** — all tests pass cleanly with `-race` enabled, verifying thread-safety in concurrent goroutine dispatch flows.
-- **Deterministic ID contract** — `TestHandleRealTimeDispatch_IDMatchesDBWriteID` explicitly asserts that the ID generated by the database persistence pipeline and the real-time WebSocket dispatch pipeline are identical for the same `(EventID, UserID)` pair.
+- **Sin librerías externas de mocks** — mocks en memoria delgados y artesanales implementan las interfaces `outbound.NotificationRepository` y `outbound.Notifier` directamente dentro de los archivos de prueba.
+- **Aislamiento por capas** — cada archivo de prueba apunta a una única capa arquitectónica; ninguna prueba cruza los límites hexagonales.
+- **Race-safe** — todas las pruebas pasan limpiamente con `-race` habilitado, verificando la thread-safety en flujos de despacho de goroutines concurrentes.
+- **Contrato de ID determinístico** — `TestHandleRealTimeDispatch_IDMatchesDBWriteID` afirma explícitamente que el ID generado por el pipeline de persistencia en DB y el pipeline de despacho WebSocket en tiempo real son idénticos para el mismo par `(EventID, UserID)`.
 
 ---
 
-## Deployment & Production Considerations
+## Despliegue y Consideraciones de Producción
 
-### 1. Kubernetes & Load Balancer Sticky Sessions
+### 1. Kubernetes y Sticky Sessions en el Load Balancer
 
-Because WebSocket connections are persistent, stateful TCP connections, deploying across multiple Kubernetes pods requires **Sticky Sessions (Session Affinity)** at the Ingress / API Gateway layer:
+Dado que las conexiones WebSocket son conexiones TCP persistentes y con estado, el despliegue en múltiples pods de Kubernetes requiere **Sticky Sessions (Session Affinity)** en la capa de Ingress / API Gateway:
 
 ```yaml
 metadata:
@@ -669,31 +702,31 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 ```
 
-While RabbitMQ Streams guarantee that *all* pods receive every notification broadcast, sticky sessions ensure that reconnection handshakes and ping/pong frames route reliably.
+Mientras los RabbitMQ Streams garantizan que *todos* los pods reciben cada broadcast de notificación, las sticky sessions aseguran que los handshakes de reconexión y los frames ping/pong enruten de forma confiable.
 
-### 2. Database Partition Maintenance
+### 2. Mantenimiento de Particiones de Base de Datos
 
-Monthly partitions are created via SQL migration. Schedule a monthly job to generate future partitions:
+Las particiones mensuales se crean mediante migración SQL. Programar un job mensual para generar particiones futuras:
 
 ```sql
 SELECT create_monthly_partition('notifications.notification', CURRENT_DATE + INTERVAL '1 month');
 ```
 
-Partitions older than 90 days should be dropped via scheduled job to free storage.
+Las particiones con más de 90 días deben eliminarse mediante job programado para liberar almacenamiento.
 
-### 3. Stream Retention & Offset Recovery
+### 3. Retención del Stream y Recuperación de Offsets
 
-Stream retention is configured via `STREAM_MAX_AGE_SECS` (default: 24 hours). Each pod tracks its offset independently using the consumer name `{POD_NAME}:{STREAM_NAME}`. On restart, `QueryOffset` resumes from the last committed position.
+La retención del Stream se configura vía `STREAM_MAX_AGE_SECS` (por defecto: 24 horas). Cada pod rastrea su offset de forma independiente usando el nombre de consumidor `{POD_NAME}:{STREAM_NAME}`. Al reiniciar, `QueryOffset` reanuda desde la última posición confirmada.
 
-### 4. Graceful Shutdown
+### 4. Apagado Graceful
 
-The server implements OS signal trapping (`SIGINT`, `SIGTERM`). Upon receiving a termination signal:
-1. The HTTP/WebSocket server stops accepting new connections.
-2. RabbitMQ Quorum and Stream consumers unsubscribe and commit their final offsets.
-3. Database connection pools (`sqlx.DB`) are drained and closed cleanly.
+El servidor implementa captura de señales del SO (`SIGINT`, `SIGTERM`). Al recibir una señal de terminación:
+1. El servidor HTTP/WebSocket deja de aceptar nuevas conexiones.
+2. Los consumidores Quorum y Stream de RabbitMQ se desuscriben y confirman sus offsets finales.
+3. Los pools de conexión de base de datos (`sqlx.DB`) se drenan y cierran limpiamente.
 
 ---
 
-## License
+## Licencia
 
-This project is proprietary software owned by **Smart Payment Services**. All rights reserved.
+Este proyecto es software propietario propiedad de **Smart Payment Services**. Todos los derechos reservados.

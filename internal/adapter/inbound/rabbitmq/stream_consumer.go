@@ -111,7 +111,11 @@ func (c *StreamConsumer) consume(ctx context.Context) error {
 		},
 		stream.NewConsumerOptions().
 			SetConsumerName(consumerName). // Unique per pod — enables server-side offset tracking
-			SetOffset(offsetSpec),         // Resume from last committed offset, or First() on new pod
+			SetOffset(offsetSpec).         // Resume from last committed offset, or First() on new pod
+			SetAutoCommit(stream.NewAutoCommitStrategy().
+				SetCountBeforeStorage(500).        // Commit after every 500 messages processed
+				SetFlushInterval(5*time.Second),   // Or every 5 seconds — whichever fires first
+			),
 	)
 	if err != nil {
 		return fmt.Errorf("new consumer: %w", err)
