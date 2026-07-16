@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"nxt-msa-notifications/internal/domain"
+	"nxt-msa-notifications/internal/port/outbound"
+	"nxt-msa-notifications/internal/usecase"
 	"strings"
 	"testing"
 
 	httphandler "nxt-msa-notifications/internal/adapter/inbound/http"
-	"nxt-msa-notifications/internal/domain"
-	"nxt-msa-notifications/internal/port/outbound"
-	"nxt-msa-notifications/internal/usecase"
 )
 
 // ─────────────────────────────────────────────
@@ -23,6 +23,7 @@ import (
 type mockHandlerRepo struct {
 	notifications []domain.Notification
 	unreadCount   int
+	totalCount    int
 	markReadErr   error
 	findErr       error
 	countErr      error
@@ -30,12 +31,19 @@ type mockHandlerRepo struct {
 
 func (m *mockHandlerRepo) Save(_ context.Context, _ *domain.Notification) error { return nil }
 func (m *mockHandlerRepo) MarkAsRead(_ context.Context, _, _ string) error      { return m.markReadErr }
-func (m *mockHandlerRepo) MarkAllAsRead(_ context.Context, _ string) error      { return m.markReadErr }
+
+func (m *mockHandlerRepo) MarkAllAsRead(_ context.Context, _ string) error { return m.markReadErr }
+
 func (m *mockHandlerRepo) FindByUser(_ context.Context, _ string, _ bool, _, _ int) ([]domain.Notification, error) {
 	return m.notifications, m.findErr
 }
+
 func (m *mockHandlerRepo) CountUnread(_ context.Context, _ string) (int, error) {
 	return m.unreadCount, m.countErr
+}
+
+func (m *mockHandlerRepo) CountAll(_ context.Context, _ string, _ bool) (int, error) {
+	return m.totalCount, m.countErr
 }
 
 // ─────────────────────────────────────────────
@@ -67,11 +75,12 @@ func newTestHandler(repo outbound.NotificationRepository) *httphandler.Handler {
 // GET /v1/notifications tests
 // ─────────────────────────────────────────────
 
-func TestGetNotifications_ValidToken_Returns200(t *testing.T) {
+func TestGetNotifications_ValidToken_ReturnsTotalCount(t *testing.T) {
 	repo := &mockHandlerRepo{
 		notifications: []domain.Notification{
 			{ID: "notif-001", UserID: "USERS0001", Title: "Hello"},
 		},
+		totalCount: 42,
 	}
 	h := newTestHandler(repo)
 
@@ -87,8 +96,8 @@ func TestGetNotifications_ValidToken_Returns200(t *testing.T) {
 
 	var body map[string]any
 	json.NewDecoder(w.Body).Decode(&body)
-	if body["count"].(float64) != 1 {
-		t.Errorf("count: got %v, want 1", body["count"])
+	if body["count"].(float64) != 42 {
+		t.Errorf("count: got %v, want 42", body["count"])
 	}
 }
 

@@ -39,3 +39,13 @@ func (uc *HistoryUseCase) GetUnreadCount(ctx context.Context, userID string) (in
 	}
 	return count, nil
 }
+
+// GetTotalCount returns the total count of notifications for a user.
+// When unreadOnly is true, only unread notifications are counted.
+func (uc *HistoryUseCase) GetTotalCount(ctx context.Context, userID string, unreadOnly bool) (int, error) {
+	count, err := uc.repo.CountAll(ctx, userID, unreadOnly)
+	if err != nil {
+		return 0, fmt.Errorf("HistoryUseCase.GetTotalCount: %w", err)
+	}
+	return count, nil
+}

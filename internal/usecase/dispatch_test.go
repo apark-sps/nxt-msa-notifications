@@ -3,13 +3,12 @@ package usecase_test
 import (
 	"context"
 	"errors"
-	"sync"
-	"testing"
-	"time"
-
 	"nxt-msa-notifications/internal/domain"
 	"nxt-msa-notifications/internal/port/outbound"
 	"nxt-msa-notifications/internal/usecase"
+	"sync"
+	"testing"
+	"time"
 )
 
 // ─────────────────────────────────────────────
@@ -38,6 +37,7 @@ func (m *mockRepo) FindByUser(_ context.Context, _ string, _ bool, _, _ int) ([]
 	return nil, nil
 }
 func (m *mockRepo) CountUnread(_ context.Context, _ string) (int, error) { return 0, nil }
+func (m *mockRepo) CountAll(_ context.Context, _ string, _ bool) (int, error) { return 0, nil }
 
 // mockNotifier is a thread-safe in-memory mock for outbound.Notifier.
 type mockNotifier struct {

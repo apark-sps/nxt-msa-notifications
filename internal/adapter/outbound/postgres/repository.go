@@ -5,12 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"nxt-msa-notifications/internal/domain"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-
-	"nxt-msa-notifications/internal/domain"
 )
 
 // Repository implements outbound.NotificationRepository backed by PostgreSQL.
@@ -136,7 +135,8 @@ func (r *Repository) Save(ctx context.Context, n *domain.Notification) error {
 		channels[i] = string(ch)
 	}
 
-	_, err = r.primary.ExecContext(ctx, `
+	_, err = r.primary.ExecContext(
+		ctx, `
 		INSERT INTO notifications.notification
 			(id, user_id, hierarchy_id, type, title, body, metadata, channels, status, created_at)
 		VALUES
@@ -155,7 +155,8 @@ func (r *Repository) Save(ctx context.Context, n *domain.Notification) error {
 // The user_id guard ensures users cannot mark other users' notifications.
 func (r *Repository) MarkAsRead(ctx context.Context, notificationID, userID string) error {
 	now := time.Now().UTC()
-	result, err := r.primary.ExecContext(ctx, `
+	result, err := r.primary.ExecContext(
+		ctx, `
 		UPDATE notifications.notification
 		SET status = 'read', read_at = $1
 		WHERE id = $2 AND user_id = $3 AND status != 'read'`,
@@ -174,7 +175,8 @@ func (r *Repository) MarkAsRead(ctx context.Context, notificationID, userID stri
 // MarkAllAsRead marks all pending/delivered notifications as read for a user.
 func (r *Repository) MarkAllAsRead(ctx context.Context, userID string) error {
 	now := time.Now().UTC()
-	_, err := r.primary.ExecContext(ctx, `
+	_, err := r.primary.ExecContext(
+		ctx, `
 		UPDATE notifications.notification
 		SET status = 'read', read_at = $1
 		WHERE user_id = $2 AND status != 'read'`,
@@ -232,13 +234,31 @@ func (r *Repository) FindByUser(ctx context.Context, userID string, unreadOnly b
 // CountUnread uses the read-replica and the partial index for O(log n) performance.
 func (r *Repository) CountUnread(ctx context.Context, userID string) (int, error) {
 	var count int
-	err := r.readOnly.QueryRowContext(ctx, `
+	err := r.readOnly.QueryRowContext(
+		ctx, `
 		SELECT COUNT(*) FROM notifications.notification
 		WHERE user_id = $1 AND status != 'read'`,
 		userID,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("countUnread: %w", err)
+	}
+	return count, nil
+}
+
+func (r *Repository) CountAll(ctx context.Context, userID string, unreadOnly bool) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM notifications.notification
+		WHERE user_id = $1`
+
+	if unreadOnly {
+		query += ` AND status != 'read'`
+	}
+
+	var count int
+	err := r.readOnly.QueryRowContext(ctx, query, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("countAll: %w", err)
 	}
 	return count, nil
 }

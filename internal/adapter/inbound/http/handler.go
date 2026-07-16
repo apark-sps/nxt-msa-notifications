@@ -81,9 +81,15 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	totalCount, err := h.history.GetTotalCount(r.Context(), claims.UserID, unreadOnly)
+	if err != nil {
+		writeError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, NotificationListResponse{
 		Notifications: notifications,
-		Count:         len(notifications),
+		Count:         totalCount,
 	})
 }
 

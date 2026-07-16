@@ -2,7 +2,6 @@ package outbound
 
 import (
 	"context"
-
 	"nxt-msa-notifications/internal/domain"
 )
 
@@ -26,4 +25,8 @@ type NotificationRepository interface {
 	// CountUnread returns the count of unread notifications for a user.
 	// Used by the HTTP GET /count route and the WebSocket catch-up push.
 	CountUnread(ctx context.Context, userID string) (int, error)
+
+	// CountAll returns total notifications for a user.
+	// When unreadOnly is true, only unread notifications are counted.
+	CountAll(ctx context.Context, userID string, unreadOnly bool) (int, error)
 }
