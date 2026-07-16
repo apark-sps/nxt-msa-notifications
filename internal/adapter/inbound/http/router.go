@@ -13,7 +13,7 @@ func NewRouter(handler *Handler, hub *ws.Hub) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Root redirects to API docs
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/api/", http.StatusMovedPermanently)
 	})
 
