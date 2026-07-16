@@ -75,7 +75,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Notification list with count",
+                        "description": "Notification list with total_count and returned_count",
                         "schema": {
                             "$ref": "#/definitions/internal_adapter_inbound_http.NotificationListResponse"
                         }
@@ -230,8 +230,13 @@ const docTemplate = `{
         "internal_adapter_inbound_http.NotificationListResponse": {
             "type": "object",
             "properties": {
-                "count": {
-                    "type": "integer"
+                "total_count": {
+                    "type": "integer",
+                    "description": "Total notifications matching the filter (for pagination UI)"
+                },
+                "returned_count": {
+                    "type": "integer",
+                    "description": "Number of items in the current page"
                 },
                 "notifications": {
                     "type": "array",

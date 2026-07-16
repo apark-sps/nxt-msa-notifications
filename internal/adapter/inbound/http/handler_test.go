@@ -23,6 +23,7 @@ import (
 type mockHandlerRepo struct {
 	notifications []domain.Notification
 	unreadCount   int
+	returnedCount int
 	totalCount    int
 	markReadErr   error
 	findErr       error
@@ -96,8 +97,8 @@ func TestGetNotifications_ValidToken_ReturnsTotalCount(t *testing.T) {
 
 	var body map[string]any
 	json.NewDecoder(w.Body).Decode(&body)
-	if body["count"].(float64) != 42 {
-		t.Errorf("count: got %v, want 42", body["count"])
+	if body["total_count"].(float64) != 42 {
+		t.Errorf("total_count: got %v, want 42", body["total_count"])
 	}
 }
 

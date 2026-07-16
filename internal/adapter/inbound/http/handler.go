@@ -3,11 +3,10 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
-
 	"nxt-msa-notifications/internal/adapter/middleware"
 	"nxt-msa-notifications/internal/domain"
 	"nxt-msa-notifications/internal/usecase"
+	"strconv"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -15,9 +14,12 @@ import (
 // ─────────────────────────────────────────────────────────────
 
 // NotificationListResponse is the payload returned by GET /v1/notifications.
+// total_count is the total number of notifications matching the filter (for pagination UI).
+// returned_count is the number of items in the current page (convenience for clients).
 type NotificationListResponse struct {
 	Notifications []domain.Notification `json:"notifications"`
-	Count         int                   `json:"count"`
+	TotalCount    int                   `json:"total_count"`
+	ReturnedCount int                   `json:"returned_count"`
 }
 
 // UnreadCountResponse is the payload returned by GET /v1/notifications/count.
@@ -60,7 +62,7 @@ func NewHandler(history *usecase.HistoryUseCase, acknowledge *usecase.Acknowledg
 //	@Param			unread	query		boolean					false	"Return only unread notifications"
 //	@Param			limit	query		integer					false	"Maximum results to return (default 50)"
 //	@Param			offset	query		integer					false	"Pagination offset (default 0)"
-//	@Success		200		{object}	NotificationListResponse	"Notification list with count"
+//	@Success		200		{object}	NotificationListResponse	"Notification list with total_count and returned_count"
 //	@Failure		401		{object}	ErrorResponse				"Unauthorized — missing or invalid token"
 //	@Failure		500		{object}	ErrorResponse				"Internal server error"
 //	@Router			/notifications [get]
@@ -81,6 +83,8 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	returnedCount := len(notifications)
+
 	totalCount, err := h.history.GetTotalCount(r.Context(), claims.UserID, unreadOnly)
 	if err != nil {
 		writeError(w, "internal server error", http.StatusInternalServerError)
@@ -89,7 +93,8 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, NotificationListResponse{
 		Notifications: notifications,
-		Count:         totalCount,
+		TotalCount:    totalCount,
+		ReturnedCount: returnedCount,
 	})
 }
 

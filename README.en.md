@@ -257,7 +257,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/nxt-notif
 | Method | Path | Description | Response |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Health check | `200 {"status":"ok"}` |
-| `GET` | `/v1/notifications` | Paginated history (`?limit=20&offset=0&unread=true`) | `200` |
+| `GET` | `/v1/notifications` | Paginated history (`?limit=20&offset=0&unread=true`) | `200 {"notifications":[],"total_count":N,"returned_count":N}` |
 | `GET` | `/v1/notifications/count` | Unread count | `200 {"unread_count":N}` |
 | `PATCH` | `/v1/notifications/{id}/read` | Mark single as read | `204` |
 | `PATCH` | `/v1/notifications/read-all` | Mark all as read | `204` |

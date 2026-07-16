@@ -514,7 +514,8 @@ GET /v1/notifications?limit=20&offset=0&unread=true
       "created_at": "2026-07-06T20:40:12Z"
     }
   ],
-  "count": 1
+  "total_count": 1,
+  "returned_count": 1
 }
 ```
 
